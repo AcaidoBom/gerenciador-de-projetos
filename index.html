@@ -55,9 +55,8 @@ input[type=text]{font:inherit;color:var(--ink);background:var(--card);border:1px
 input[type=text]:focus{outline:2px solid var(--acc)}
 .rn{width:100%;min-width:0}
 #pl .card{min-height:360px}
-#pl{max-width:1126px;grid-template-columns:1086px;justify-content:center;align-items:start}
-#pl .project-tile{width:1086px;height:1448px;min-height:1448px}
-#pl .add{width:360px;height:360px;justify-self:center}
+#pl{grid-template-columns:repeat(auto-fill,minmax(min(100%,310px),1fr))}
+#pl .project-tile{width:auto;height:auto;min-height:0;aspect-ratio:3/4}
 .add{align-items:center;justify-content:center;font-size:4.5rem;font-weight:300;color:var(--mute);border-style:dashed;background:transparent;cursor:pointer;font-family:inherit}
 .add:hover{border-color:var(--acc);color:var(--acc)}
 .mdl{position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:30;padding:20px}
