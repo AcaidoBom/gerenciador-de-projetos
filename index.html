@@ -99,14 +99,40 @@ textarea:focus{outline:2px solid var(--acc)}
 .gal button{position:absolute;top:6px;right:6px;padding:2px 8px;border-radius:20px}
 .lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:grid;place-items:center;z-index:20;padding:20px;cursor:zoom-out}
 .lb img{max-width:100%;max-height:100%;border-radius:8px}
+
+body.auth-locked{overflow:hidden}
+#auth-overlay{display:none;position:fixed;inset:0;z-index:1000;background:var(--bg);place-items:center;padding:20px}
+body.auth-locked #auth-overlay{display:grid}
+.auth-card{width:min(100%,460px);background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:24px;box-shadow:0 20px 70px rgba(0,0,0,.22);display:flex;flex-direction:column;gap:14px}
+.auth-card h1{font-size:1.5rem;margin:0}.auth-card p{margin:0;color:var(--mute)}
+.auth-field{display:flex;flex-direction:column;gap:6px;font-weight:600}
+.auth-field input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+#sync-status{min-width:140px;text-align:center}
 </style>
 </head>
-<body>
+<body class="auth-locked">
+<div id="auth-overlay" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+  <form class="auth-card" id="auth-form">
+    <h1 id="auth-title">Entrar no Gerenciador de Projetos</h1>
+    <p>Acesse seus projetos e dados sincronizados na sua conta.</p>
+    <label class="auth-field">E-mail<input id="auth-email" type="email" autocomplete="username" required></label>
+    <label class="auth-field">Senha<input id="auth-password" type="password" autocomplete="current-password" required></label>
+    <button id="auth-submit" type="submit">Entrar</button>
+    <div id="auth-message" class="cnt" role="status">Entre com sua conta para continuar.</div>
+  </form>
+  <section class="auth-card" id="migration-choice" hidden>
+    <h1>Dados salvos neste navegador</h1>
+    <p>Encontramos dados locais neste navegador. Você pode enviá-los para sua conta Supabase ou começar com o espaço na nuvem vazio. Os anexos e imagens continuam neste navegador até a próxima etapa de armazenamento.</p>
+    <button id="import-local" type="button">Importar projetos, progresso e notas para a nuvem</button>
+    <button id="start-empty" type="button">Começar vazio (guardar cópia local)</button>
+    <div id="migration-message" class="cnt" role="status"></div>
+  </section>
+</div>
 <div id="home">
 <header id="hd"><div class="hin">
 <a class="back" href="#projetos">← Meus projetos</a>
 <h1 id="pt">🎮 Roteiro de Desenvolvimento de Jogos</h1>
-<p>Todas as etapas e categorias para levar um jogo da ideia ao lançamento e além. Marque os itens conforme avança e clique no nome de um item para abrir a página de anotações e imagens dele. Tudo fica salvo neste navegador.</p>
+<p>Todas as etapas e categorias para levar um jogo da ideia ao lançamento e além. Marque os itens conforme avança e clique no nome de um item para abrir a página de anotações e imagens dele. Projetos, progresso e notas podem sincronizar na sua conta. Anexos e imagens ainda ficam neste navegador até ativarmos o armazenamento de arquivos.</p>
 <button id="cust" type="button" class="cbtn">🎨 Personalizar</button>
 <div id="cp" class="cp" hidden>
 <div class="row"><span>Imagem do topo do roteiro</span><label class="btn">Escolher imagem<input type="file" id="bgf" accept="image/*" hidden></label><button type="button" id="bgx">Remover</button></div>
@@ -121,6 +147,8 @@ textarea:focus{outline:2px solid var(--acc)}
 <div class="track"><div class="fill" id="fill"></div></div>
 <span class="cnt" id="cnt"></span>
 <button id="reset" type="button">Desmarcar tudo</button>
+<span id="sync-status" class="cnt" role="status">Conectando...</span>
+<button id="sign-out" type="button" hidden>Sair</button>
 </div></div>
 <div class="chips" id="chips"></div>
 <main id="main"></main>
@@ -143,7 +171,27 @@ textarea:focus{outline:2px solid var(--acc)}
 </div></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+var SUPABASE_URL="https://pppmdkmqlnflcrkzuoaf.supabase.co";
+var SUPABASE_PUBLISHABLE_KEY="sb_publishable_l7kaeE9VWKRBhpijzCHKaQ_l3jsGFIv";
+var supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+var cloudReady=false,currentUserId=null,authSetupUserId=null,syncTimer=0,syncBusy=false,syncQueued=false;
+function cloudSnapshot(){var o={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf("roteiro-jogos-")===0&&!/^roteiro-jogos-nimg(?:-|$)/.test(k))o[k]=localStorage.getItem(k)}return o}
+function restoreCloudSnapshot(o){for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf("roteiro-jogos-")===0)localStorage.removeItem(k)}Object.keys(o||{}).forEach(function(k){if(k.indexOf("roteiro-jogos-")===0&&typeof o[k]==="string"&&!/^roteiro-jogos-nimg(?:-|$)/.test(k))localStorage.setItem(k,o[k])});reloadAppState()}
+function reloadAppState(){try{PJ=JSON.parse(localStorage.getItem("roteiro-jogos-projetos")||"null")}catch(e){PJ=null}if(!Array.isArray(PJ))PJ=[];S=ld("roteiro-jogos-v1");NT=ld("roteiro-jogos-notas");IC=ld("roteiro-jogos-nimg");CP=""}
+function setSyncStatus(t){var e=document.getElementById("sync-status");if(e)e.textContent=t}
+function queueCloudSave(){if(!cloudReady||!currentUserId)return;if(syncTimer)clearTimeout(syncTimer);setSyncStatus("Salvando na nuvem...");syncTimer=setTimeout(writeCloudSnapshot,700)}
+async function writeCloudSnapshot(){if(!cloudReady||!currentUserId)return;if(syncBusy){syncQueued=true;return}syncBusy=true;var uid=currentUserId;try{var r=await supabaseClient.from("app_state").upsert({user_id:uid,data:cloudSnapshot()},{onConflict:"user_id"});if(r.error)throw r.error;setSyncStatus("Sincronizado")}catch(e){setSyncStatus("Não foi possível sincronizar. Seus dados continuam neste navegador.");console.error("Falha ao sincronizar com Supabase",e)}finally{syncBusy=false;if(syncQueued){syncQueued=false;queueCloudSave()}}}
+function showAuthForm(message){document.body.classList.add("auth-locked");document.getElementById("auth-form").hidden=false;document.getElementById("migration-choice").hidden=true;if(message)document.getElementById("auth-message").textContent=message}
+function unlockApp(){document.body.classList.remove("auth-locked");document.getElementById("auth-form").hidden=true;document.getElementById("migration-choice").hidden=true;document.getElementById("sign-out").hidden=false}
+async function handleAuthSession(session){if(!session){cloudReady=false;currentUserId=null;authSetupUserId=null;if(syncTimer)clearTimeout(syncTimer);document.getElementById("sign-out").hidden=true;showAuthForm("Entre com sua conta para continuar.");setSyncStatus("Desconectado");return}var uid=session.user.id;if(authSetupUserId===uid)return;authSetupUserId=uid;cloudReady=false;document.getElementById("auth-message").textContent="Carregando seus dados...";try{var r=await supabaseClient.from("app_state").select("data").eq("user_id",uid).maybeSingle();if(r.error)throw r.error;currentUserId=uid;if(r.data){restoreCloudSnapshot(r.data.data||{});cloudReady=true;unlockApp();setSyncStatus("Conectado à nuvem");route();return}var local=cloudSnapshot();if(Object.keys(local).length){document.getElementById("auth-form").hidden=true;document.getElementById("migration-choice").hidden=false;document.body.classList.add("auth-locked");document.getElementById("migration-message").textContent="Escolha como iniciar este primeiro acesso."}else{cloudReady=true;reloadAppState();unlockApp();setSyncStatus("Nuvem pronta");route()}}catch(e){authSetupUserId=null;currentUserId=null;document.getElementById("auth-message").textContent="Não foi possível conectar ao banco. Confira a configuração e tente novamente.";console.error("Falha ao carregar dados do Supabase",e)}}
+document.getElementById("auth-form").addEventListener("submit",async function(e){e.preventDefault();var b=document.getElementById("auth-submit"),m=document.getElementById("auth-message");b.disabled=true;m.textContent="Entrando...";var r=await supabaseClient.auth.signInWithPassword({email:document.getElementById("auth-email").value.trim(),password:document.getElementById("auth-password").value});b.disabled=false;if(r.error)m.textContent="Não foi possível entrar. Confira o e-mail e a senha e tente novamente."});
+document.getElementById("import-local").onclick=function(){cloudReady=true;document.getElementById("migration-choice").hidden=true;unlockApp();route();queueCloudSave()};
+document.getElementById("start-empty").onclick=function(){var o=cloudSnapshot();try{localStorage.setItem("gerenciador-projetos-backup-local",JSON.stringify(o))}catch(e){}restoreCloudSnapshot({});cloudReady=true;unlockApp();setSyncStatus("Nuvem pronta");route();queueCloudSave()};
+document.getElementById("sign-out").onclick=async function(){setSyncStatus("Saindo...");var r=await supabaseClient.auth.signOut();if(r.error)setSyncStatus("Não foi possível sair.")};
+supabaseClient.auth.onAuthStateChange(function(event,session){setTimeout(function(){handleAuthSession(session)},0)});
+supabaseClient.auth.getSession().then(function(r){if(r.error){showAuthForm("Não foi possível verificar a sessão. Atualize a página.");return}handleAuthSession(r.data.session)}).catch(function(){showAuthForm("Não foi possível verificar a sessão. Atualize a página.")});
 var P=[
 ["Ideia","Conceito e ideação","Definir o que o jogo é, para quem e por quê.",[
 "Ideia central|Frase única que resume o jogo (high concept)",
@@ -274,7 +322,7 @@ var P=[
 ];
 var KEY="roteiro-jogos-v1",S={},filter="Todas";
 try{S=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(e){S={}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));queueCloudSave()}catch(e){}}
 function stats(i){var n=P[i][3].length,d=0;for(var j=0;j<n;j++)if(S[i+"-"+j])d++;return[d,n]}
 function render(){
 var tags=["Todas"];P.forEach(function(p){if(tags.indexOf(p[0])<0)tags.push(p[0])});
@@ -307,7 +355,7 @@ document.addEventListener("click",function(e){var t=e.target.getAttribute("data-
 var rt=0;
 document.getElementById("reset").onclick=function(){var b=this;if(!rt){b.textContent="Confirmar?";rt=setTimeout(function(){rt=0;b.textContent="Desmarcar tudo"},3000);return}clearTimeout(rt);rt=0;b.textContent="Desmarcar tudo";S={};save();render()};
 function ld(k){try{return JSON.parse(localStorage.getItem(k)||"{}")||{}}catch(e){return{}}}
-function sv(k,o){try{localStorage.setItem(k,JSON.stringify(o))}catch(e){}}
+function sv(k,o){try{localStorage.setItem(k,JSON.stringify(o));queueCloudSave()}catch(e){}}
 var NT=ld("roteiro-jogos-notas"),IC=ld("roteiro-jogos-nimg"),DB=null,CK=null,tm=0;
 function db(){if(DB)return DB;DB=new Promise(function(res,rej){try{var r=indexedDB.open("rj-img",1);r.onupgradeneeded=function(){var s=r.result.createObjectStore("img",{keyPath:"id",autoIncrement:true});s.createIndex("k","k")};r.onsuccess=function(){res(r.result)};r.onerror=function(){rej()}}catch(e){rej(e)}});return DB}
 function tx(mode,fn){return db().then(function(d){return new Promise(function(res,rej){var t=d.transaction("img",mode),q=fn(t.objectStore("img"));t.oncomplete=function(){res(q&&q.result)};t.onerror=t.onabort=function(){rej()}})})}
@@ -363,7 +411,7 @@ function openP(id){if(CP===id)return;CP=id;KEY=sk("roteiro-jogos-v1",id);NK=sk("
 function renderMenu(){
 document.getElementById("pl").innerHTML=PJ.map(function(p){var d=Object.keys(ld(sk("roteiro-jogos-v1",p.id))).length,tot=0;P.forEach(function(q){tot+=q[3].length});return '<article class="card'+(d===tot?" done":"")+'" data-id="'+p.id+'"><button type="button" class="gear" data-a="cfg" aria-label="Configurar projeto">⚙</button><div class="top"><div class="num">🎮</div><div><div class="tag">'+d+' de '+tot+' itens</div><h2 class="pn">'+esc(p.nome)+'</h2></div></div><div class="mini"><i style="width:'+Math.round(d/tot*100)+'%"></i></div></article>'}).join("")+'<button type="button" class="card add" data-a="new" aria-label="Novo projeto">+</button>';PJ.forEach(cardBg)}
 function imgPurge(id){return tx("readonly",function(s){return s.getAll()}).then(function(L){return Promise.all(L.filter(function(o){return id==="inicial"?/^\d+-\d+$/.test(o.k):o.k.indexOf(id+":")===0}).map(function(o){return imgDel(o.id)}))})}
-function delP(p){PJ=PJ.filter(function(x){return x.id!==p.id});svP();["roteiro-jogos-v1","roteiro-jogos-notas","roteiro-jogos-nimg"].forEach(function(b){try{localStorage.removeItem(sk(b,p.id))}catch(e){}});imgPurge(p.id).catch(function(){});bgDelK(bkf(p.id)).catch(function(){});bgDelK(hkf(p.id)).catch(function(){});renderMenu()}
+function delP(p){PJ=PJ.filter(function(x){return x.id!==p.id});svP();["roteiro-jogos-v1","roteiro-jogos-notas","roteiro-jogos-nimg"].forEach(function(b){try{localStorage.removeItem(sk(b,p.id))}catch(e){}});imgPurge(p.id).catch(function(){});bgDelK(bkf(p.id)).catch(function(){});bgDelK(hkf(p.id)).catch(function(){});queueCloudSave();renderMenu()}
 function bkf(id){return "__bg-"+id}
 function hkf(id){return id==="inicial"?"__fundo":"__hd-"+id}
 function bk(){return hkf(CP)}
