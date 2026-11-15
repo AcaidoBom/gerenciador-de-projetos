@@ -411,7 +411,7 @@ if(a==="ed"){c.querySelector(".nx").outerHTML='<textarea class="ne"></textarea>'
 if(a==="sv"){var v=c.querySelector(".ne").value.trim();if(v)n.t=v;NT[k]=L;sv(NK,NT);notes(k);return}
 if(a==="del"){if(e.target.getAttribute("data-c")!=="1"){e.target.setAttribute("data-c","1");e.target.textContent="Confirmar?";return}L=L.filter(function(x){return x!==n});if(L.length)NT[k]=L;else delete NT[k];sv(NK,NT);notes(k)}};
 document.getElementById("dk").onchange=function(e){if(e.target.checked)S[k]=1;else delete S[k];save()};
-document.getElementById("fi").onchange=function(e){addFiles(k,e.target.files);e.target.value=""};
+document.getElementById("fi").onchange=function(e){var files=[].slice.call(e.currentTarget.files||[]);e.currentTarget.value="";if(files.length)addFiles(k,files)};
 dz.ondragover=function(e){e.preventDefault();dz.classList.add("over")};
 dz.ondragleave=function(){dz.classList.remove("over")};
 dz.ondrop=function(e){e.preventDefault();dz.classList.remove("over");addFiles(k,e.dataTransfer.files)};
